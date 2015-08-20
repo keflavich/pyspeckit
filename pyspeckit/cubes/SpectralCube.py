@@ -2,7 +2,7 @@
 Cubes
 =====
 
-Tools to deal with spectroscopic data cubes.  
+Tools to deal with spectroscopic data cubes.
 
 Some features in Cubes require additional packages:
 
@@ -17,10 +17,10 @@ The 'grunt work' is performed by the :py:mod:`cubes` module
 # import parent package
 import pyspeckit
 from pyspeckit import spectrum
-from ..spectrum.units import generate_xarr,SpectroscopicAxis
+from ..spectrum.units import (generate_xarr, SpectroscopicAxis,
+                              SpectroscopicAxes)
 # import local things
 import mapplot
-import readers
 import time
 import numpy as np
 from pyspeckit.parallel_map import parallel_map
@@ -33,6 +33,20 @@ import cubes
 from astropy import log
 from astropy import wcs
 from astropy import units
+from astropy.utils.console import ProgressBar
+from functools import wraps
+import warnings
+
+def not_for_cubes(func):
+
+    @wraps(func)
+    def wrapper(*args):
+        warnings.warn("This operation ({0}) operates on the spectrum selected "
+                      "from the cube, e.g. with `set_spectrum` or `set_apspec`"
+                      ", it does not operate on the whole cube.")
+        return func(*args)
+    return wrapper
+
 class Cube(spectrum.Spectrum):
 
     def __init__(self, filename=None, cube=None, xarr=None, xunit=None,
@@ -103,9 +117,16 @@ class Cube(spectrum.Spectrum):
                     self.unit = cube.unit
                 log.debug("Self.unit: {0}".format(self.unit))
                 if xarr is None:
-                    xarr = SpectroscopicAxis(cube.spectral_axis,
-                                             unit=cube.spectral_axis.unit,
-                                             refX=cube.wcs.wcs.restfrq, refX_unit='Hz')
+                    if cube.spectral_axis.flags['OWNDATA']:
+                        xarr = SpectroscopicAxis(cube.spectral_axis,
+                                                 unit=cube.spectral_axis.unit,
+                                                 refX=cube.wcs.wcs.restfrq,
+                                                 refX_unit='Hz')
+                    else:
+                        xarr = SpectroscopicAxis(cube.spectral_axis.copy(),
+                                                 unit=cube.spectral_axis.unit,
+                                                 refX=cube.wcs.wcs.restfrq,
+                                                 refX_unit='Hz')
                 if header is None:
                     header = cube.header
             elif hasattr(cube, 'unit'):
@@ -121,7 +142,9 @@ class Cube(spectrum.Spectrum):
                 self.errorcube = errorcube.value
             else:
                 self.errorcube = errorcube
+            log.debug("XARR flags: {0}".format(xarr.flags))
             self.xarr = generate_xarr(xarr, unit=xunit)
+            log.debug("self.xarr flags: {0}".format(xarr.flags))
             self.header = header
             self.error = None
             if self.cube is not None:
@@ -170,7 +193,7 @@ class Cube(spectrum.Spectrum):
             self.wcs.wcs.fix()
             self._spectral_axis_number = self.wcs.wcs.spec+1
             self._first_cel_axis_num = np.where(self.wcs.wcs.axis_types // 1000 == 2)[0][0]+1
-            
+
             # TODO: Improve this!!!
             self.system = ('galactic'
                            if ('CTYPE{0}'.format(self._first_cel_axis_num)
@@ -239,7 +262,7 @@ class Cube(spectrum.Spectrum):
         """
         Slice a cube along the spectral axis
         (equivalent to "spectral_slab" from the spectral_cube package)
-        
+
         Parameters
         ----------
         start : numpy.float or int
@@ -249,7 +272,7 @@ class Cube(spectrum.Spectrum):
         unit : str
             allowed values are any supported physical unit, 'pixel'
         """
-        
+
         x_in_units = self.xarr.as_unit(unit)
         start_ind = x_in_units.x_to_pix(start)
         stop_ind  = x_in_units.x_to_pix(stop)
@@ -267,7 +290,7 @@ class Cube(spectrum.Spectrum):
         if newcube.error is not None:
             newcube.error = newcube.error[spectrum_slice]
         newcube.xarr = newcube.xarr[spectrum_slice]
-        
+
         # create new specfit / baseline instances (otherwise they'll be the wrong length)
         newcube._register_fitters()
         newcube.baseline = spectrum.baseline.Baseline(newcube)
@@ -280,7 +303,7 @@ class Cube(spectrum.Spectrum):
             newcube.baseline.order = self.baseline.order
 
         return newcube
-    
+
 
     def __getitem__(self, indx):
         """
@@ -290,7 +313,7 @@ class Cube(spectrum.Spectrum):
 
         return Cube(xarr=self.xarr.__getitem__(indx[0]), cube=self.cube[indx],
                     errorcube=self.errorcube[indx] if self.errorcube else None,
-                    maskmap=self.maskmap)
+                    maskmap=self.maskmap[indx[1:]] if self.maskmap is not None else None)
 
     def set_spectrum(self, x, y):
         self.data = self.cube[:,y,x]
@@ -375,7 +398,7 @@ class Cube(spectrum.Spectrum):
         Parameters
         ----------
         aperture : list
-            A list of aperture parameters, e.g. 
+            A list of aperture parameters, e.g.
              * For a circular aperture, len(ap)=3:
                + ``ap = [xcen,ycen,radius]``
              * For an elliptical aperture, len(ap)=5:
@@ -460,7 +483,7 @@ class Cube(spectrum.Spectrum):
 
         *wunit* [str]
             arcsec, arcmin, or degree
-            
+
 
         """
 
@@ -539,7 +562,8 @@ class Cube(spectrum.Spectrum):
                 blank_value=0, integral=True, direct=False, absorption=False,
                 use_nearest_as_guess=False, use_neighbor_as_guess=False,
                 start_from_point=(0,0), multicore=1, position_order = None,
-                continuum_map=None, **fitkwargs):
+                continuum_map=None, prevalidate_guesses=False, maskmap=None,
+                **fitkwargs):
         """
         Fit a spectrum to each valid pixel in the cube
 
@@ -553,13 +577,13 @@ class Cube(spectrum.Spectrum):
             other point with a successful fit and use its best-fit parameters
             as the guess
         use_neighbor_as_guess: bool
-            Set this keyword to use the average best-fit parameters from 
+            Set this keyword to use the average best-fit parameters from
             neighboring positions with successful fits as the guess
         start_from_point: tuple(int,int)
             Either start from the center or from a point defined by a tuple.
-            Work outward from that starting point.  
-        position_order: ndarray[naxis=2] 
-            2D map of region with pixel values indicating the order in which 
+            Work outward from that starting point.
+        position_order: ndarray[naxis=2]
+            2D map of region with pixel values indicating the order in which
             to carry out the fitting.  Any type with increasing pixel values.
         guesses: tuple or ndarray[naxis=3]
             Either a tuple/list of guesses with len(guesses) = npars or a cube
@@ -575,17 +599,26 @@ class Cube(spectrum.Spectrum):
         blank_value: float
             Value to replace non-fitted locations with.  A good alternative is
             numpy.nan
-        verbose: bool 
+        verbose: bool
         verbose_level: int
             Controls how much is output.
             0,1 - only changes frequency of updates in loop
             2 - print out messages when skipping pixels
             3 - print out messages when fitting pixels
-            4 - specfit will be verbose 
+            4 - specfit will be verbose
         multicore: int
             if >1, try to use multiprocessing via parallel_map to run on multiple cores
         continuum_map: np.ndarray
             Same shape as error map.  Subtract this from data before estimating noise.
+        prevalidate_guesses: bool
+            An extra check before fitting is run to make sure the guesses are
+            all within the specified limits.  May be slow, so it is off by
+            default.  It also should not be necessary, since careful checking
+            is performed before each fit.
+        maskmap : `np.ndarray`, optional
+            A boolean mask map, where ``True`` implies that the data are good.
+            This will be used for both plotting using `mapplot` and fitting
+            using `fiteach`.  If ``None``, will use ``self.maskmap``.
 
         """
         if 'multifit' in fitkwargs:
@@ -595,13 +628,16 @@ class Cube(spectrum.Spectrum):
         if not hasattr(self.mapplot,'plane'):
             self.mapplot.makeplane()
 
+        if maskmap is None:
+            maskmap = self.maskmap
+
         yy,xx = np.indices(self.mapplot.plane.shape)
-        if isinstance(self.mapplot.plane, np.ma.core.MaskedArray): 
+        if isinstance(self.mapplot.plane, np.ma.core.MaskedArray):
             OK = ((~self.mapplot.plane.mask) &
-                  self.maskmap.astype('bool')).astype('bool')
+                  maskmap.astype('bool')).astype('bool')
         else:
             OK = (np.isfinite(self.mapplot.plane) &
-                  self.maskmap.astype('bool')).astype('bool')
+                  maskmap.astype('bool')).astype('bool')
 
         # NAN guesses rule out the model too
         if hasattr(guesses,'shape') and guesses.shape[1:] == self.cube.shape[1:]:
@@ -615,15 +651,16 @@ class Cube(spectrum.Spectrum):
         if hasattr(position_order,'shape') and position_order.shape == self.cube.shape[1:]:
             sort_distance = np.argsort(position_order.flat)
         else:
-            d_from_start = np.roll( np.roll( distance, start_from_point[0], 0),
-                                    start_from_point[1], 1)
+            d_from_start = np.roll(np.roll(distance,
+                                           start_from_point[0], 0),
+                                   start_from_point[1], 1)
             sort_distance = np.argsort(d_from_start.flat)
 
 
-            
+
         valid_pixels = zip(xx.flat[sort_distance][OK.flat[sort_distance]],
                            yy.flat[sort_distance][OK.flat[sort_distance]])
-        
+
         if len(valid_pixels) != len(set(valid_pixels)):
             raise ValueError("There are non-unique pixels in the 'valid pixel' list.  "
                              "This should not be possible and indicates a major error.")
@@ -641,14 +678,14 @@ class Cube(spectrum.Spectrum):
                 raise ValueError("Parameter guesses are required.")
 
         self.parcube = np.zeros((npars,)+self.mapplot.plane.shape)
-        self.errcube = np.zeros((npars,)+self.mapplot.plane.shape) 
+        self.errcube = np.zeros((npars,)+self.mapplot.plane.shape)
         if integral: self.integralmap = np.zeros((2,)+self.mapplot.plane.shape)
 
         # newly needed as of March 27, 2012.  Don't know why.
         if 'fittype' in fitkwargs: self.specfit.fittype = fitkwargs['fittype']
         self.specfit.fitter = self.specfit.Registry.multifitters[self.specfit.fittype]
 
-        # TODO: VALIDATE THAT ALL GUESSES ARE WITHIN RANGE GIVEN THE 
+        # TODO: VALIDATE THAT ALL GUESSES ARE WITHIN RANGE GIVEN THE
         # FITKWARG LIMITS
 
         # array to store whether pixels have fits
@@ -707,7 +744,7 @@ class Cube(spectrum.Spectrum):
             xpatch, ypatch = get_neighbors(x,y,self.has_fit.shape)
             local_fits = self.has_fit[ypatch+y,xpatch+x]
 
-            
+
             if use_nearest_as_guess and self.has_fit.sum() > 0:
                 if verbose_level > 1 and ii == 0 or verbose_level > 4:
                     log.info("Using nearest fit as guess")
@@ -717,7 +754,7 @@ class Cube(spectrum.Spectrum):
                 nearest_x, nearest_y = xx.flat[nearest_ind],yy.flat[nearest_ind]
                 gg = self.parcube[:,nearest_y,nearest_x]
             elif use_neighbor_as_guess and np.any(local_fits):
-                # Array is N_guess X Nvalid_nbrs so averaging over 
+                # Array is N_guess X Nvalid_nbrs so averaging over
                 # Axis=1 is the axis of all valid neighbors
                 gg = np.mean(self.parcube[:, (ypatch+y)[local_fits],
                                           (xpatch+x)[local_fits]], axis=1)
@@ -756,7 +793,7 @@ class Cube(spectrum.Spectrum):
                 self.errcube[:,y,x] = blank_value
                 if integral: self.integralmap[:,y,x] = blank_value
 
-        
+
             if blank_value != 0:
                 self.parcube[self.parcube == 0] = blank_value
                 self.errcube[self.parcube == 0] = blank_value
@@ -771,6 +808,9 @@ class Cube(spectrum.Spectrum):
                              (ii+1, npix, x, y, snmsg, time.time()-t0, pct))
 
             if sp.specfit.modelerrs is None:
+                log.exception("Fit number %i at %i,%i failed with no specific error.")
+                log.exception("Guesses were: {0}".format(str(gg)))
+                log.exception("Fitkwargs were: {0}".format(str(fitkwargs)))
                 raise TypeError("The fit never completed; something has gone wrong.")
 
             if integral:
@@ -816,6 +856,16 @@ class Cube(spectrum.Spectrum):
         # This is NOT in a try/except block because we want to raise the
         # exception here if an exception is going to happen
         sp.specfit(guesses=gg, **fitkwargs)
+
+        if prevalidate_guesses:
+            if guesses.ndim == 3:
+                for ii,(x,y) in ProgressBar(tuple(enumerate(valid_pixels))):
+                    pinf, _ = sp.specfit.fitter._make_parinfo(parvalues=guesses[:,y,x], **fitkwargs)
+                    sp.specfit._validate_parinfo(pinf, 'raise')
+            else:
+                pinf, _ = sp.specfit.fitter._make_parinfo(parvalues=guesses, **fitkwargs)
+                sp.specfit._validate_parinfo(pinf, 'raise')
+
         #### END TEST BLOCK ####
 
 
@@ -907,7 +957,7 @@ class Cube(spectrum.Spectrum):
             self.mapplot.makeplane()
 
         yy,xx = np.indices(self.mapplot.plane.shape)
-        if isinstance(self.mapplot.plane, np.ma.core.MaskedArray): 
+        if isinstance(self.mapplot.plane, np.ma.core.MaskedArray):
             OK = (True-self.mapplot.plane.mask) * self.maskmap
         else:
             OK = np.isfinite(self.mapplot.plane) * self.maskmap
@@ -1052,7 +1102,7 @@ class Cube(spectrum.Spectrum):
         import cubes
         def smooth(self,smooth,**kwargs):
             """
-            Smooth the spectrum by factor `smooth`.  
+            Smooth the spectrum by factor `smooth`.
 
             Documentation from the :mod:`cubes.spectral_smooth` module:
 
@@ -1068,7 +1118,7 @@ class Cube(spectrum.Spectrum):
                 raise ValueError("Convolution resulted in different X and Y array lengths.  Convmode should be 'same'.")
             if self.errorcube is not None:
                 self.errorcube = cubes.spectral_smooth(self.errorcube,smooth,**kwargs)
-        
+
             self._smooth_header(smooth)
         __doc__ += "cubes.spectral_smooth doc: \n" + cubes.spectral_smooth.__doc__
     except ImportError:
@@ -1104,7 +1154,7 @@ class Cube(spectrum.Spectrum):
             import astropy.io.fits as pyfits
         except ImportError:
             import pyfits
-        
+
         try:
             fitcubefile = pyfits.PrimaryHDU(data=np.concatenate([self.parcube,self.errcube]), header=self.header)
             fitcubefile.header['FITTYPE'] = self.specfit.fittype
@@ -1160,12 +1210,12 @@ class CubeStack(Cube):
         self.cubelist = cubelist
 
         log.info("Concatenating data")
-        self.xarr = spectrum.units.SpectroscopicAxes([sp.xarr for sp in cubelist])
-        self.cube = np.ma.concatenate([cube.cube for cube in cubelist])
+        self.xarr = SpectroscopicAxes([sp.xarr for sp in cubelist])
+        self.cube = np.ma.concatenate([icube.cube for icube in cubelist])
 
-        if any([cube.errorcube is not None for cube in cubelist]):
-            if all([cube.errorcube is not None for cube in cubelist]):
-                self.errorcube = np.ma.concatenate([cube.errorcube for cube in cubelist])
+        if any([icube.errorcube is not None for icube in cubelist]):
+            if all([icube.errorcube is not None for icube in cubelist]):
+                self.errorcube = np.ma.concatenate([icube.errorcube for icube in cubelist])
             else:
                 raise ValueError("Mismatched error cubes.")
         else:
@@ -1194,7 +1244,7 @@ class CubeStack(Cube):
             self.wcs.wcs.fix()
             self._spectral_axis_number = self.wcs.wcs.spec+1
             self._first_cel_axis_num = np.where(self.wcs.wcs.axis_types // 1000 == 2)[0][0]+1
-            
+
             # TODO: Improve this!!!
             self.system = ('galactic'
                            if ('CTYPE{0}'.format(self._first_cel_axis_num)
@@ -1206,9 +1256,9 @@ class CubeStack(Cube):
             self._first_cel_axis_num = 1
             self.system = 'PIXEL'
 
-        
+
         self.unit = cubelist[0].unit
-        for cube in cubelist: 
+        for cube in cubelist:
             if cube.unit != self.unit:
                 raise ValueError("Mismatched units "
                                  "{0} and {1}".format(cube.unit, self.unit))
@@ -1229,7 +1279,7 @@ class CubeStack(Cube):
         self.writer = {}
         for writer in spectrum.writers.writers:
             self.writer[writer] = spectrum.writers.writers[writer](self)
-        
+
         # Special.  This needs to be modified to be more flexible; for now I need it to work for nh3
         self.plot_special = None
         self.plot_special_kwargs = {}
@@ -1251,7 +1301,7 @@ def get_neighbors(x, y, shape):
     Find the 9 nearest neighbors, excluding self and any out of bounds points
     """
     ysh, xsh = shape
-    xpyp = [(ii,jj) 
+    xpyp = [(ii,jj)
             for ii,jj in itertools.product((-1,0,1),
                                            (-1,0,1))
             if (ii+x < xsh) and (ii+x >= 0)

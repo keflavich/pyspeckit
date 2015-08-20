@@ -8,6 +8,7 @@ Wrapper to fit formaldehyde spectra.
 import pyspeckit
 from matplotlib import pyplot
 import copy
+from astropy import units as u
 
 title_dict = {'oneone':'H$_2$CO 1$_{11}$-1$_{10}$',
               'twotwo':'H$_2$CO 2$_{12}$-2$_{11}$',
@@ -130,9 +131,9 @@ def BigSpectrum_to_H2COdict(sp, vrange=None):
         else:
             freq_test_low = freq_test_high = freq
 
-        if (sp.xarr.as_unit('Hz').in_range(freq_test_low) or
-                sp.xarr.as_unit('Hz').in_range(freq_test_high)):
-            spdict[linename] = sp.copy()
+        if (sp.xarr.as_unit('Hz').in_range(freq_test_low*u.Hz) or
+                sp.xarr.as_unit('Hz').in_range(freq_test_high*u.Hz)):
+            spdict[linename] = sp.copy(deep=True)
             spdict[linename].xarr.convert_to_unit('GHz')
             spdict[linename].xarr.refX = freq
             spdict[linename].xarr.refX_unit = 'Hz'
@@ -142,7 +143,7 @@ def BigSpectrum_to_H2COdict(sp, vrange=None):
             spdict[linename].xarr.convert_to_unit('km/s')
             if vrange is not None:
                 try:
-                    spdict[linename].crop(*vrange, units='km/s')
+                    spdict[linename].crop(*vrange, unit='km/s')
                 except IndexError:
                     # if the freq in range, but there's no data in range, remove
                     spdict.pop(linename)

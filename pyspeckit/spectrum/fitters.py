@@ -114,16 +114,13 @@ default_Registry.add_fitter('ammonia',models.ammonia_model(),6,key='a')
 default_Registry.add_fitter('ammonia_tau',models.ammonia_model_vtau(),6)
 # not implemented default_Registry.add_fitter(Registry,'ammonia',models.ammonia_model( ),6, ,key='A')
 default_Registry.add_fitter('formaldehyde',models.formaldehyde_fitter,3,key='F') # CAN'T USE f!  reserved for fitting
-default_Registry.add_fitter('formaldehyde',models.formaldehyde_vheight_fitter,3)
+# do'nt override default_Registry.add_fitter('formaldehyde',models.formaldehyde_vheight_fitter,3)
 default_Registry.add_fitter('gaussian',models.gaussian_fitter(),3,key='g')
 default_Registry.add_fitter('vheightgaussian',models.gaussian_vheight_fitter(),4)
-default_Registry.add_fitter('gaussian',models.gaussian_fitter(),3)
 default_Registry.add_fitter('voigt',models.voigt_fitter(),4,key='v')
-default_Registry.add_fitter('voigt',models.voigt_fitter(),4)
 default_Registry.add_fitter('lorentzian',models.lorentzian_fitter(),3,key='L')
-default_Registry.add_fitter('lorentzian',models.lorentzian_fitter(),3)
-default_Registry.add_fitter('hill5',models.hill5infall.hill5_fitter,5)
-default_Registry.add_fitter('hcn',models.hcn.hcn_vtau_fitter,4)
+#default_Registry.add_fitter('hill5',models.hill5infall.hill5_fitter,5)
+#default_Registry.add_fitter('hcn',models.hcn.hcn_vtau_fitter,4)
 
 
 class Specfit(interactive.Interactive):
@@ -580,7 +577,8 @@ class Specfit(interactive.Interactive):
             # otherwise npars will disagree, which causes problems if
             # renormalization happens
             self.fitter.vheight = False
-            self.fitter._make_parinfo()
+            self.fitter.npeaks = self.npeaks
+            self.fitter._make_parinfo(npeaks=self.npeaks)
 
         # add kwargs to fitkwargs
         self.fitkwargs.update(kwargs)
@@ -616,8 +614,14 @@ class Specfit(interactive.Interactive):
         if parinfo is not None:
             self._validate_parinfo(parinfo, mode='fix')
         else:
-            pinf, _ = self.fitter._make_parinfo(**self.fitkwargs)
-            self._validate_parinfo(pinf, 'fix')
+            pinf, _ = self.fitter._make_parinfo(parvalues=guesses,
+                                                npeaks=self.npeaks,
+                                                **self.fitkwargs)
+            new_guesses = self._validate_parinfo(pinf, 'guesses')
+            if any((x!=y) for x,y in zip(guesses, new_guesses)):
+                warn("Guesses have been changed from {0} to {1}"
+                     .format(guesses, new_guesses))
+            guesses = new_guesses
 
         mpp,model,mpperr,chi2 = self.fitter(xtofit, spectofit, err=err,
                                             npeaks=self.npeaks,
@@ -1879,7 +1883,7 @@ class Specfit(interactive.Interactive):
 
     def _validate_parinfo(self, parinfo, mode='fix'):
 
-        assert mode in ('fix','raise','check')
+        assert mode in ('fix','raise','check','guesses')
 
         any_out_of_range = []
 
@@ -1887,7 +1891,7 @@ class Specfit(interactive.Interactive):
             if (param.limited[0] and (param.value < param.limits[0])):
                 if (np.allclose(param.value, param.limits[0])):
                     # nextafter -> next representable float
-                    if mode == 'fix':
+                    if mode in ('fix', 'guesses'):
                         warn("{0} is less than the lower limit {1}, but very close."
                              " Converting to {1}+ULP".format(param.value,
                                                              param.limits[0]))
@@ -1897,15 +1901,15 @@ class Specfit(interactive.Interactive):
                                          .format(param.value, param.limits[1]))
                     elif mode == 'check':
                         any_out_of_range.append("lt:close",)
-                if mode == 'raise':
+                else:
                     raise ValueError("{0} is less than the lower limit {1}"
                                      .format(param.value, param.limits[0]))
-                elif mode == 'check':
-                    any_out_of_range.append(False)
+            elif mode == 'check':
+                any_out_of_range.append(False)
 
             if (param.limited[1] and (param.value > param.limits[1])):
                 if (np.allclose(param.value, param.limits[1])):
-                    if mode =='fix':
+                    if mode in ('fix', 'guesses'):
                         param.value = np.nextafter(param.limits[1], param.limits[1]-1)
                         warn("{0} is greater than the upper limit {1}, but very close."
                              " Converting to {1}-ULP".format(param.value,
@@ -1915,10 +1919,12 @@ class Specfit(interactive.Interactive):
                                          .format(param.value, param.limits[1]))
                     elif mode == 'check':
                         any_out_of_range.append("gt:close")
-                if mode == 'raise':
+                else:
                     raise ValueError("{0} is greater than the upper limit {1}"
                                      .format(param.value, param.limits[0]))
-                elif mode == 'check':
-                    any_out_of_range.append(False)
+            elif mode == 'check':
+                any_out_of_range.append(False)
 
+        if mode == 'guesses':
+            return parinfo.values
         return any_out_of_range
