@@ -16,7 +16,7 @@ import numpy as np
 import warnings
 from astropy import units as u
 from astropy import log
-from astropy.utils import AstropyDeprecationWarning
+from astropy.utils.exceptions import AstropyDeprecationWarning
 
 # declare a case-insensitive dict class to return case-insensitive versions of each dictionary...
 # this is just a shortcut so that units can be specified as, e.g., Hz, hz, HZ, hZ, etc.  3 of those 4 are "legitimate".
