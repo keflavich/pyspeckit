@@ -16,6 +16,7 @@ import numpy as np
 import warnings
 from astropy import units as u
 from astropy import log
+from astropy.utils import AstropyDeprecationWarning
 
 # declare a case-insensitive dict class to return case-insensitive versions of each dictionary...
 # this is just a shortcut so that units can be specified as, e.g., Hz, hz, HZ, hZ, etc.  3 of those 4 are "legitimate".
@@ -42,34 +43,42 @@ class SmartCaseNoSpaceDict(dict):
             return dict.__getitem__(self, key.lower().replace(" ",""))
 
     def __setitem__(self, key, value):
-        dict.__setitem__(self,key,value)
+        dict.__setitem__(self, key, value)
         # only set lower-case version if there isn't one there already
         # prevents overwriting mm with Mm.lower()
-        if hasattr(key,'lower'):
-            if key.lower().replace(" ","") not in self:
-                self.__setitem__(key.lower().replace(" ",""), value)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=AstropyDeprecationWarning, )
+            if hasattr(key, 'lower'):
+                if key.lower().replace(" ","") not in self:
+                    self.__setitem__(key.lower().replace(" ",""), value)
 
     def __contains__(self, key):
         cased = dict.__contains__(self,key)
-        if hasattr(key,'lower') and cased is False:
-            return dict.__contains__(self, key.lower().replace(" ",""))
-        else:
-            return cased
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=AstropyDeprecationWarning, )
+            if hasattr(key,'lower') and cased is False:
+                return dict.__contains__(self, key.lower().replace(" ",""))
+            else:
+                return cased
 
     def has_key(self, key):
         """ This is deprecated, but we're keeping it around """
         cased = dict.has_key__(self,key)
-        if hasattr(key,'lower') and cased is False:
-            return dict.has_key__(self, key.lower().replace(" ",""))
-        else:
-            return cased
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=AstropyDeprecationWarning, )
+            if hasattr(key,'lower') and cased is False:
+                return dict.has_key__(self, key.lower().replace(" ",""))
+            else:
+                return cased
 
     def get(self, key, def_val=None):
         cased = dict.get(self,key)
-        if hasattr(key,'lower') and cased is None:
-            return dict.get(self, key.lower().replace(" ",""),def_val)
-        else:
-            return cased
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=AstropyDeprecationWarning, )
+            if hasattr(key,'lower') and cased is None:
+                return dict.get(self, key.lower().replace(" ",""),def_val)
+            else:
+                return cased
 
     def setdefault(self, key, def_val=None):
         """
@@ -77,10 +86,12 @@ class SmartCaseNoSpaceDict(dict):
         a value of default and return default. default defaults to None.
         """
         cased = dict.setdefault(self,key)
-        if hasattr(key,'lower') and cased is None:
-            return dict.setdefault(self, key.lower().replace(" ",""),def_val)
-        else:
-            return cased
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=AstropyDeprecationWarning, )
+            if hasattr(key,'lower') and cased is None:
+                return dict.setdefault(self, key.lower().replace(" ",""),def_val)
+            else:
+                return cased
 
     def update(self, inputdict):
         for k,v in inputdict.items():
@@ -95,10 +106,12 @@ class SmartCaseNoSpaceDict(dict):
 
     def pop(self, key, def_val=None):
         cased = dict.pop(self,key)
-        if hasattr(key,'lower') and cased is None:
-            return dict.pop(self, key.lower().replace(" ",""),def_val)
-        else:
-            return cased
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', category=AstropyDeprecationWarning, )
+            if hasattr(key,'lower') and cased is None:
+                return dict.pop(self, key.lower().replace(" ",""),def_val)
+            else:
+                return cased
 
 
 length_dict = {'meter':1.0,'m':1.0,
