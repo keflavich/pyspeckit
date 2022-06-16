@@ -661,7 +661,9 @@ class Plotter(object):
 
     def line_ids(self, line_names, line_xvals, xval_units=None, auto_yloc=True,
                  velocity_offset=None, velocity_convention='radio',
-                 auto_yloc_fraction=0.9,  **kwargs):
+                 auto_yloc_fraction=0.9,
+                 auto_yloc_line_scale=0.9,
+                 **kwargs):
         """
         Add line ID labels to a plot using lineid_plot
         http://oneau.wordpress.com/2011/10/01/line-id-plot/
@@ -688,6 +690,9 @@ class Plotter(object):
             range
         auto_yloc_fraction: float in range [0,1]
             The fraction of the plot (vertically) at which to place labels
+        auto_yloc_line_scale: float in range [0,1]
+            The fraction of the ``auto_yloc_fraction`` to scale the line length
+            by (this makes the line shorter)
 
         Examples
         --------
@@ -736,7 +741,7 @@ class Plotter(object):
         if auto_yloc:
             yr = self.axis.get_ylim()
             kwargs['box_loc'] = (yr[1]-yr[0])*auto_yloc_fraction + yr[0]
-            kwargs['arrow_tip'] = (yr[1]-yr[0])*(auto_yloc_fraction*0.9) + yr[0]
+            kwargs['arrow_tip'] = (yr[1]-yr[0])*(auto_yloc_fraction*auto_yloc_line_scale) + yr[0]
 
         lineid_plot.plot_line_ids(self.Spectrum.xarr,
                                   self.Spectrum.data,
