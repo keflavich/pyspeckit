@@ -469,33 +469,33 @@ def nupper_of_kkms(kkms, freq, Aul, replace_bad=None):
 
     .. math::
 
-        N_{tot} = (3 k) / (8 \pi^3 \nu S \mu^2 R_i)   (Q/g) \exp(E_u/k T_{ex}) \int(T_R/f dv)
+        N_{tot} = (3 k_B) / (8 \pi^3 \nu S \mu^2 R_i)   (Q/g) \exp(E_u/k_B T_{ex}) \int(T_R/f dv)
 
     Eqn 31:
 
     .. math::
 
-        N_{tot}/N_u = Q_{rot} / g_u \exp(E_u/k T_{ex})
+        N_{tot}/N_u = Q_{rot} / g_u \exp(E_u/k_B T_{ex})
 
-        -> N_{tot} = N_u Q_{rot} / g_u \exp(E_u/k T_{ex})
-        -> Nu = N_{tot} g / Q_{rot} \exp(-E_u / k T_{ex})
+        -> N_{tot} = N_u Q_{rot} / g_u \exp(E_u/k_B T_{ex})
+        -> Nu = N_{tot} g / Q_{rot} \exp(-E_u / k_B T_{ex})
 
     To get Nu of an observed line, then:
 
     .. math::
 
-        Nu Q_{rot} / g_u \exp(E_u/k T_{ex}) = (3 k) / (8 \pi^3 \nu S \mu^2 R_i)   (Q/g) \exp(E_u/k T_{ex}) \int(T_R/f dv)
+        Nu Q_{rot} / g_u \exp(E_u/k_B T_{ex}) = (3 k_B) / (8 \pi^3 \nu S \mu^2 R_i)   (Q/g) \exp(E_u/k_B T_{ex}) \int(T_R/f dv)
 
     This term cancels:
 
     .. math::
-        Q_{rot} / g_u \exp(E_u/k T_{ex})
+        Q_{rot} / g_u \exp(E_u/k_B T_{ex})
 
     Leaving:
 
     .. math::
 
-        N_u = (3 k) / (8 \pi^3 \nu S \mu^2 R_i)   integ(T_R/f dv)
+        N_u = (3 k_B) / (8 \pi^3 \nu S \mu^2 R_i)   \int (T_R/f dv)
 
     $\int(T_R/f dv)$ is the optically thin integrated intensity in K km/s
     dnu/nu = dv/c [doppler eqn], so to get $\int(T_R dnu)$, sub in $dv = c/\nu d\nu$
@@ -503,7 +503,7 @@ def nupper_of_kkms(kkms, freq, Aul, replace_bad=None):
     .. math::
 
 
-        N_u = (3 k c) / (8 \pi^3 \nu^2  S \mu^2 R_i)   integ(T_R/f d\nu)
+        N_u = (3 k_B c) / (8 \pi^3 \nu^2  S \mu^2 R_i)   \int (T_R/f d\nu)
 
 
     We then need to deal with the S \mu^2 R_i term.  We assume R_i = 1, since we
@@ -527,16 +527,16 @@ def nupper_of_kkms(kkms, freq, Aul, replace_bad=None):
 
     .. math::
 
-        Nu = (3 k c) / (8 \pi^3 \nu^2  ((3 h c^3 A_{ul}) / (64 \pi^4 \nu^3)))   \int(T_R/f d\nu)
-           = (3 k c 64 \pi^4 \nu^3) / (8 \pi^3 \nu^2 3 h c^3 A_{ul})            \int(T_R/f d\nu)
-           = (8 \pi \nu k / (A_{ul} c^2 h)) \int(T_R/f d\nu)
+        Nu = (3 k_B c) / (8 \pi^3 \nu^2  ((3 h c^3 A_{ul}) / (64 \pi^4 \nu^3)))   \int(T_R/f d\nu)
+           = (3 k_B c 64 \pi^4 \nu^3) / (8 \pi^3 \nu^2 3 h c^3 A_{ul})            \int(T_R/f d\nu)
+           = (8 \pi \nu k_B / (A_{ul} c^2 h)) \int(T_R/f d\nu)
 
     which is the equation implemented below.  We could also have left this in
     dv units by substituting du = nu/c dv:
 
     .. math::
 
-           = (8 \pi \nu^2 k / (A_{ul} c^3 h)) \int (T_R/f dv)
+           = (8 \pi \nu^2 k_B / (A_{ul} c^3 h)) \int (T_R/f dv)
 
     """
 
