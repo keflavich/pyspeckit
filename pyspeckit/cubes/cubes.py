@@ -37,6 +37,7 @@ except ImportError:
 
 from . import posang # agpy code
 from ..parallel_map import parallel_map
+from ..spectrum import smooth as sm
 
 dtor = pi/180.0
 
@@ -77,7 +78,7 @@ def blfunc_generator(x=None, polyorder=None, splineorder=None,
                 endpoint = ngood - (ngood % sampling)
                 y = np.mean([yfit[mask][ii:endpoint:sampling]
                              for ii in range(sampling)], axis=0)
-                polypars = np.polyfit(x[mask][sampling/2:endpoint:sampling],
+                polypars = np.polyfit(x[mask][sampling//2:endpoint:sampling],
                                       y, polyorder)
                 return yreal-np.polyval(polypars, x).astype(yreal.dtype)
 
@@ -95,7 +96,7 @@ def blfunc_generator(x=None, polyorder=None, splineorder=None,
                 if len(y) <= splineorder:
                     raise ValueError("Sampling is too sparse.  Use finer sampling or "
                                      "decrease the spline order.")
-                spl = UnivariateSpline(x[mask][sampling/2:endpoint:sampling],
+                spl = UnivariateSpline(x[mask][sampling//2:endpoint:sampling],
                                        y,
                                        k=splineorder,
                                        s=0)
@@ -148,7 +149,7 @@ def baseline_cube(cube, polyorder=None, cubemask=None, splineorder=None,
         fit_cube = masked_cube.reshape(cube.shape[0], cube.shape[1]*cube.shape[2]).T
 
 
-    baselined = np.array(parallel_map(blfunc, zip(fit_cube,reshaped_cube), numcores=numcores))
+    baselined = np.array(parallel_map(blfunc, list(zip(fit_cube,reshaped_cube)), numcores=numcores))
     blcube = baselined.T.reshape(cube.shape)
     return blcube
 
@@ -728,15 +729,19 @@ def spectral_smooth(cube, smooth_factor, downsample=True, parallel=True,
     # need to make the cube "flat" along dims 1&2 for iteration in the "map"
     flatshape = (cube.shape[0],cube.shape[1]*cube.shape[2])
 
-    Ssmooth = lambda x: smooth.smooth(x, smooth_factor, downsample=downsample, **kwargs)
+    Ssmooth = lambda x: sm.smooth(x, smooth_factor,
+                                  downsample=downsample, **kwargs)
     if parallel:
-        newcube = numpy.array(parallel_map(Ssmooth, cube.reshape(flatshape).T, numcores=numcores)).T.reshape(newshape)
+        res = parallel_map(Ssmooth, cube.reshape(flatshape).T,
+                           numcores=numcores)
     else:
-        newcube = numpy.array(map(Ssmooth, cube.reshape(flatshape).T)).T.reshape(newshape)
+        res = list(map(Ssmooth, cube.reshape(flatshape).T))
+
+    newcube = np.array(res).T.reshape(newshape)
 
     #naive, non-optimal version
     # for (x,y) in zip(xx.flat,yy.flat):
-    #     newcube[:,y,x] = smooth.smooth(cube[:,y,x], smooth_factor,
+    #     newcube[:,y,x] = sm.smooth(cube[:,y,x], smooth_factor,
     #             downsample=downsample, **kwargs)
 
     return newcube

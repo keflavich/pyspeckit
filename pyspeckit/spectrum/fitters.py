@@ -135,6 +135,7 @@ default_Registry = Registry()
 default_Registry.add_fitter('ammonia',models.ammonia_model(),6,key='a')
 default_Registry.add_fitter('cold_ammonia',models.ammonia.cold_ammonia_model(),6)
 default_Registry.add_fitter('ammonia_tau',models.ammonia_model_vtau(),6)
+default_Registry.add_fitter('ammonia15n',models.ammonia15n_model(),6)
 # not implemented default_Registry.add_fitter(Registry,'ammonia',models.ammonia_model( ),6, ,key='A')
 default_Registry.add_fitter('formaldehyde',models.formaldehyde_fitter,3,key='F') # CAN'T USE f!  reserved for fitting
 # do'nt override default_Registry.add_fitter('formaldehyde',models.formaldehyde_vheight_fitter,3)
@@ -300,8 +301,8 @@ class Specfit(interactive.Interactive):
 
         if 'multifit' in kwargs:
             kwargs.pop('multifit')
-            log.warning("The multifit keyword is no longer required.  All fits "
-                        "allow for multiple components.", DeprecationWarning)
+            warnings.warn("The multifit keyword is no longer required.  All fits "
+                          "allow for multiple components.", DeprecationWarning)
 
         if 'guess' in kwargs:
             if guesses is None:
@@ -687,7 +688,7 @@ class Specfit(interactive.Interactive):
         if len(guesses) < self.Registry.npars[self.fittype]:
             raise ValueError("Too few parameters input.  Need at least %i for %s models" % (self.Registry.npars[self.fittype],self.fittype))
 
-        self.npeaks = len(guesses)/self.Registry.npars[self.fittype]
+        self.npeaks = len(guesses)//self.Registry.npars[self.fittype]
         self.fitter = self.Registry.multifitters[self.fittype]
         self.vheight = False
         if self.fitter.vheight:
@@ -1697,7 +1698,7 @@ class Specfit(interactive.Interactive):
         if unit == 'pixels':
             return [xpixmin,xpixmax]
         else:
-            return self.Spectrum.xarr[[xpixmin,xpixmax]].as_unit(units)
+            return self.Spectrum.xarr[[xpixmin,xpixmax]].as_unit(unit)
 
     def shift_pars(self, frame=None):
         """

@@ -36,8 +36,8 @@ from .ammonia_constants import (line_names, freq_dict, aval_dict, ortho_dict,
 def ammonia(xarr, trot=20, tex=None, ntot=14, width=1, xoff_v=0.0, fortho=0.0,
             tau=None, fillingfraction=None, return_tau=False,
             return_tau_profile=False, background_tb=TCMB, verbose=False,
-            return_components=False, debug=False, line_names=line_names,
-            ignore_neg_models=False):
+            return_components=False, debug=False, line_names=None,
+            ignore_neg_models=False, constants=None):
     """
     Generate a model Ammonia spectrum based on input temperatures, column, and
     gaussian parameters.  The returned model will be in Kelvin (brightness
@@ -100,6 +100,15 @@ def ammonia(xarr, trot=20, tex=None, ntot=14, width=1, xoff_v=0.0, fortho=0.0,
         More messages
     debug: bool
         For debugging.
+    line_names: list or None
+        Which lines to model.  Defaults to all lines defined in ``constants``.
+    constants: module or None
+        The module of spectroscopic constants (line frequencies, hyperfine
+        offsets and weights, rotational constants) to use.  Defaults to
+        `pyspeckit.spectrum.models.ammonia_constants` (NH3); pass
+        `pyspeckit.spectrum.models.ammonia15n_constants` to model the
+        15N-bearing isotopologue instead (see
+        `~pyspeckit.spectrum.models.ammonia15n`).
 
     Returns
     -------
@@ -112,8 +121,20 @@ def ammonia(xarr, trot=20, tex=None, ntot=14, width=1, xoff_v=0.0, fortho=0.0,
         (if ``return_tau`` is set)
     """
 
-    from .ammonia_constants import (ckms, ccms, h, kb,
-                                    Jortho, Jpara, Brot, Crot)
+    from .ammonia_constants import ckms, ccms, h, kb
+
+    # the spectroscopic constants (line frequencies, weights, degeneracies)
+    # default to those of NH3 but can be swapped for an isotopologue's
+    # (e.g., ammonia15n_constants)
+    if constants is None:
+        from . import ammonia_constants as constants
+    freq_dict = constants.freq_dict
+    aval_dict = constants.aval_dict
+    ortho_dict = constants.ortho_dict
+    Jortho, Jpara = constants.Jortho, constants.Jpara
+    Brot, Crot = constants.Brot, constants.Crot
+    if line_names is None:
+        line_names = constants.line_names
 
     # Convert X-units to frequency in GHz
     if xarr.unit.to_string() != 'GHz':
@@ -136,7 +157,8 @@ def ammonia(xarr, trot=20, tex=None, ntot=14, width=1, xoff_v=0.0, fortho=0.0,
     elif width == 0:
         return np.zeros(xarr.size)
 
-    from .ammonia_constants import line_name_indices, line_names as original_line_names
+    line_name_indices = constants.line_name_indices
+    original_line_names = constants.line_names
 
     # recreate line_names keeping only lines with a specified tex
     # using this loop instead of tex.keys() preserves the order & data type
@@ -232,7 +254,8 @@ def ammonia(xarr, trot=20, tex=None, ntot=14, width=1, xoff_v=0.0, fortho=0.0,
                                        background_tb=background_tb,
                                        fillingfraction=fillingfraction,
                                        return_components=return_components,
-                                       return_tau_profile=return_tau_profile
+                                       return_tau_profile=return_tau_profile,
+                                       constants=constants,
                                       )
 
     if not return_tau_profile and model_spectrum.min() < 0 and background_tb == TCMB and not ignore_neg_models:
@@ -312,7 +335,8 @@ def ammonia_thin(xarr, tkin=20, tex=None, ntot=14, width=1, xoff_v=0.0,
 
 def _ammonia_spectrum(xarr, tex, tau_dict, width, xoff_v, fortho, line_names,
                       background_tb=TCMB, fillingfraction=None,
-                      return_components=False, return_tau_profile=False):
+                      return_components=False, return_tau_profile=False,
+                      constants=None):
     """
     Helper function: given a dictionary of ammonia optical depths,
     an excitation tmeperature etc, produce the spectrum.
@@ -326,6 +350,12 @@ def _ammonia_spectrum(xarr, tex, tau_dict, width, xoff_v, fortho, line_names,
     particular ammonia line being modeled.
     """
     from .ammonia_constants import (ckms, h, kb)
+
+    if constants is None:
+        from . import ammonia_constants as constants
+    voff_lines_dict = constants.voff_lines_dict
+    tau_wts_dict = constants.tau_wts_dict
+    freq_dict = constants.freq_dict
 
     # fillingfraction is an arbitrary scaling for the data
     # The model will be (normal model) * fillingfraction
@@ -784,7 +814,15 @@ class ammonia_model(model.SpectralModel):
                 # multiplied by npars to get to the right number of
                 # gaussians, it will just replicate
                 if len(parlist) == self.npars:
-                    partype_dict[partype] *= npeaks
+                    if partype == 'tied':
+                        # tied strings reference parameter indices (e.g.,
+                        # 'p[0]-p[6]'), so each peak's copy must have its
+                        # indices shifted by ii*npars
+                        partype_dict[partype] = [_increment_string_number(t, ii*self.npars)
+                                                 for ii in range(npeaks)
+                                                 for t in parlist]
+                    else:
+                        partype_dict[partype] *= npeaks
                 elif len(parlist) > self.npars:
                     # DANGER:  THIS SHOULD NOT HAPPEN!
                     log.warning("WARNING!  Input parameters were longer than allowed for variable {0}".format(parlist))
@@ -807,8 +845,8 @@ class ammonia_model(model.SpectralModel):
                     partype_dict[partype] = list(parnames) * self.npeaks
                 elif parlist==tied:
                     partype_dict[partype] = [_increment_string_number(t, ii*self.npars)
-                                             for t in tied
-                                             for ii in range(self.npeaks)]
+                                             for ii in range(self.npeaks)
+                                             for t in tied]
 
         if len(parnames) != len(partype_dict['params']):
             raise ValueError("Wrong array lengths AFTER fixing them")
@@ -1212,17 +1250,14 @@ class ammonia_model_restricted_tex(ammonia_model):
 
 def _increment_string_number(st, count):
     """
-    Increment a number in a string
+    Increment each parameter index in a 'tied' string by ``count``
 
-    Expects input of the form: p[6]
+    Expects input of the form: p[6] or p[0]-p[6]; each bracketed number is
+    incremented independently (e.g., 'p[0]-p[6]' + 7 -> 'p[7]-p[13]').
     """
 
     import re
-    dig = re.compile('[0-9]+')
 
-    if dig.search(st):
-        n = int(dig.search(st).group())
-        result = dig.sub(str(n+count), st)
-        return result
-    else:
-        return st
+    return re.sub(r'\[([0-9]+)\]',
+                  lambda m: '[{0}]'.format(int(m.group(1)) + count),
+                  st)
