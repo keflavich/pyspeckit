@@ -628,14 +628,32 @@ class Specfit(interactive.Interactive):
         return mask
 
     @property
+    def n_free_parameters(self):
+        """
+        The number of free parameters in the most recent fit: the total
+        number of model parameters (including a constant background term, if
+        one was fit) minus those that are fixed or tied to another parameter.
+        """
+        return (self.vheight + self.npeaks * self.Registry.npars[self.fittype]
+                - np.sum(self.parinfo.fixed)
+                - np.sum([x != '' for x in self.parinfo.tied]))
+
+    @property
     def dof(self):
         """ degrees of freedom in fit """
         if not hasattr(self, 'npix_fitted'):
             raise AttributeError('No fit has been run, so npix_fitted is not '
                                  'defined and dof cannot be computed.')
-        return (self.npix_fitted - self.vheight - self.npeaks *
-                self.Registry.npars[self.fittype] + np.sum(self.parinfo.fixed) +
-                np.sum([x != '' for x in self.parinfo.tied]))
+        dof = self.npix_fitted - self.n_free_parameters
+        if dof <= 0:
+            warnings.warn("The fit is under-determined: {0} pixels were "
+                          "included in the fit, but the model has {1} free "
+                          "parameters, so the degrees of freedom = {2} <= 0. "
+                          "Statistics (e.g., reduced chi^2) computed from "
+                          "this fit are not meaningful."
+                          .format(self.npix_fitted, self.n_free_parameters,
+                                  dof))
+        return dof
 
         #self.dof  = self.includemask.sum()-self.npeaks*self.Registry.npars[self.fittype]-vheight+np.sum(self.parinfo.fixed)
 
@@ -698,7 +716,37 @@ class Specfit(interactive.Interactive):
         if len(guesses) < self.Registry.npars[self.fittype]:
             raise ValueError("Too few parameters input.  Need at least %i for %s models" % (self.Registry.npars[self.fittype],self.fittype))
 
-        self.npeaks = len(guesses)//self.Registry.npars[self.fittype]
+        # If npeaks was specified as a keyword, remove it from the kwarg dicts
+        # (it would otherwise be passed a second time - in addition to
+        # npeaks=self.npeaks - to _make_parinfo and the fitter below, raising
+        # a TypeError) and reconcile it with the number of guesses provided.
+        # Note that self.fitkwargs and kwargs may or may not be the same
+        # dictionary object depending on the call path, so both are cleaned.
+        npars = self.Registry.npars[self.fittype]
+        npeaks_kwarg = kwargs.pop('npeaks', None)
+        fitkwargs_npeaks = self.fitkwargs.pop('npeaks', None)
+        if npeaks_kwarg is None:
+            npeaks_kwarg = fitkwargs_npeaks
+
+        self.npeaks = len(guesses)//npars
+
+        if npeaks_kwarg is not None and int(npeaks_kwarg) != self.npeaks:
+            npeaks_kwarg = int(npeaks_kwarg)
+            if len(guesses) == npars and npeaks_kwarg > 1:
+                # a single component's worth of guesses was given; replicate
+                # them for each peak (consistent with the behavior of
+                # make_parinfo when npeaks > 1)
+                guesses = list(guesses) * npeaks_kwarg
+                self.npeaks = npeaks_kwarg
+            else:
+                raise ValueError("npeaks={0} was specified, but {1} guesses "
+                                 "were provided for a model with {2} "
+                                 "parameters per component.  Provide either "
+                                 "{2} guesses (they will be replicated for "
+                                 "each peak) or {2}*npeaks={3} guesses."
+                                 .format(npeaks_kwarg, len(guesses), npars,
+                                         npars*npeaks_kwarg))
+
         self.fitter = self.Registry.multifitters[self.fittype]
         self.vheight = False
         if self.fitter.vheight:
@@ -860,8 +908,10 @@ class Specfit(interactive.Interactive):
 
         # calculate the number of pixels included in the fit.  This should
         # *only* be done when fitting, not when selecting data.
-        # (see self.dof)
-        self.npix_fitted = self.includemask.sum() - self.mask.sum()
+        # Masked (e.g., NaN) pixels only reduce the count if they are within
+        # the included region; masked pixels elsewhere in the spectrum are
+        # irrelevant to the fit (see self.dof and issue #258)
+        self.npix_fitted = (self.includemask & (~self.mask)).sum()
 
         self.history_fitpars()
 
@@ -1030,7 +1080,9 @@ class Specfit(interactive.Interactive):
         # make sure the full model is populated
         self._full_model(debug=debug)
 
-        self.npix_fitted = self.includemask.sum() - self.mask.sum()
+        # see the comment in multifit: masked pixels only count against the
+        # fit if they are within the included region (issue #258)
+        self.npix_fitted = (self.includemask & (~self.mask)).sum()
 
         log.debug("2. Guesses, fits after vheight removal: {0},{1}"
                   .format(self.guesses, mpp))
@@ -1909,8 +1961,16 @@ class Specfit(interactive.Interactive):
         chi2 = np.sum((self.fullresiduals[modelmask]/self.errspec[modelmask])**2)
 
         if reduced:
-            # vheight included here or not?  assuming it should be...
-            dof = modelmask.sum() - self.fitter.npars
+            # n_free_parameters includes vheight (if it was fit) and accounts
+            # for all peaks and for fixed/tied parameters
+            dof = modelmask.sum() - self.n_free_parameters
+            if dof <= 0:
+                warnings.warn("The reduced chi^2 is not meaningful: {0} "
+                              "pixels are above the significance threshold, "
+                              "but the model has {1} free parameters, so the "
+                              "degrees of freedom = {2} <= 0."
+                              .format(modelmask.sum(),
+                                      self.n_free_parameters, dof))
             return chi2 / dof
         else:
             return chi2

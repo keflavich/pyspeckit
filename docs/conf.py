@@ -77,7 +77,7 @@ print("rootpath: ",rootpath)
 
 # Add any Sphinx extension module names here, as strings. They can be extensions
 # coming with Sphinx (named 'sphinx.ext.*') or your custom ones.
-extensions += ['edit_on_github', 'edit_on_bitbucket']
+extensions += ['edit_on_github']
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ['_templates']
@@ -133,7 +133,7 @@ MOCK_MODULES = {'matplotlib', 'matplotlib.pyplot', 'matplotlib.figure',
                 'matplotlib.widgets', 'matplotlib.cbook', 'pyfits', 'scipy',
                 'scipy', 'pyfits', 'pytest',
                 'scipy.interpolate', 'scipy.ndimage', 'pywcs', 'matplotlib',
-                'matplotlib.pyplot', 'h5py', 'atpy','progressbar'}
+                'matplotlib.pyplot', 'h5py', 'progressbar'}
 for mod_name in MOCK_MODULES:
     if mod_name not in sys.modules:
         sys.modules[mod_name] = Mock()
@@ -357,6 +357,6 @@ if eval(setup_cfg.get('edit_on_github')):
     edit_on_github_source_root = ""
     edit_on_github_doc_root = "docs"
 
-edit_on_bitbucket_project = "pyspeckit/pyspeckit"
+
 edit_on_bitbucket_source_root = ""
 edit_on_bitbucket_doc_root = "doc"
